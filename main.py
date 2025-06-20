@@ -23,7 +23,7 @@ CHARACTER_PROMPT = open("character_prompt.txt", "r", encoding="utf-8").read()
 @bot.event
 async def on_message(message):
     if bot.user in message.mentions and not message.author.bot:
-        async with message.channel.typing():  # Ajout ici
+        async with message.channel.typing():
             # Récupère les 10 derniers messages (hors bots)
             messages = [
                 m async for m in message.channel.history(limit=10)
