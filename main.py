@@ -65,8 +65,15 @@ async def ask(interaction: discord.Interaction, personnage: str, question: str):
     # Récupère les 10 derniers messages du salon
     messages = [
         m async for m in interaction.channel.history(limit=10)
-        if m.content and not m.attachments and not m.embeds
+        if (
+            m.content
+            and not m.attachments
+            and not m.embeds
+            and "http://" not in m.content
+            and "https://" not in m.content
+        )
     ]
+    
     history = ""
     for m in reversed(messages):
         history += f"{m.author.name}: {m.content}\n"
@@ -78,6 +85,8 @@ async def ask(interaction: discord.Interaction, personnage: str, question: str):
         + f"{interaction.user.name}: {question}\n"
         + f"{bot.user.name}:"
     )
+
+    print(f"Prompt envoyé à LLM: {prompt}")
 
     response = await asyncio.to_thread(
         llm,
