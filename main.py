@@ -1,10 +1,15 @@
 import os
 import re
 import discord
+import enum
 import asyncio
 from discord.ext import commands
 from llama_cpp import Llama
 from typing import List
+
+class HistoriqueChoice(enum.Enum):
+    oui = "oui"
+    non = "non"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -50,10 +55,12 @@ async def personnage_autocomplete(
 @bot.tree.command(name="ask", description="Pose une question à un personnage IA")
 @discord.app_commands.describe(
     personnage="Choisis le personnage IA",
-    question="Ta question"
+    question="Ta question",
+    historique="Inclure l'historique des 10 derniers messages (oui/non)"
 )
 @discord.app_commands.autocomplete(personnage=personnage_autocomplete)
-async def ask(interaction: discord.Interaction, personnage: str, question: str):
+async def ask(interaction: discord.Interaction, personnage: str, question: str, historique: HistoriqueChoice = HistoriqueChoice.oui  # Utilise l'enum ici
+):
     if personnage not in CHARACTER_PROMPTS:
         await interaction.response.send_message(
             f"Personnage inconnu. Choisis parmi : {', '.join(CHARACTER_PROMPTS.keys())}", ephemeral=True
@@ -63,20 +70,21 @@ async def ask(interaction: discord.Interaction, personnage: str, question: str):
     await interaction.response.defer()  # Affiche "en train d'écrire..."
 
     # Récupère les 10 derniers messages du salon
-    messages = [
-        m async for m in interaction.channel.history(limit=10)
-        if (
-            m.content
-            and not m.attachments
-            and not m.embeds
-            and "http://" not in m.content
-            and "https://" not in m.content
-        )
-    ]
-    
+
     history = ""
-    for m in reversed(messages):
-        history += f"{m.author.name}: {m.content}\n"
+    if historique:
+        messages = [
+            m async for m in interaction.channel.history(limit=10)
+            if (
+                m.content
+                and not m.attachments
+                and not m.embeds
+                and "http://" not in m.content
+                and "https://" not in m.content
+            )
+        ]
+        for m in reversed(messages):
+            history += f"{m.author.name}: {m.content}\n"
 
     prompt = (
         CHARACTER_PROMPTS[personnage]
@@ -104,6 +112,9 @@ async def ask(interaction: discord.Interaction, personnage: str, question: str):
     if not answer:
         answer = "Je suis à court d'idées... réessaye 😅"
 
-    await interaction.followup.send(answer)
+    await interaction.followup.send(
+        f"**{interaction.user.display_name} :** {question}\n"
+        f"**{bot.user.display_name} :** {answer}"
+    )
 
 bot.run(token)
