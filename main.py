@@ -4,6 +4,7 @@ import discord
 import asyncio
 from discord.ext import commands
 from llama_cpp import Llama
+from typing import List
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -16,55 +17,84 @@ if not token:
 MODEL_PATH = "C:/Users/swanl/Documents/AI/text-generation-webui/user_data/models/"
 MODEL_NAME = "L3-8B-Stheno-v3.2-Q4_K_M.gguf"
 
-llm = Llama(model_path=MODEL_PATH + MODEL_NAME, n_ctx=2048, n_gpu_layers=32, n_batch=512)
+llm = Llama(model_path=MODEL_PATH + MODEL_NAME, n_ctx=2048, n_gpu_layers=99, n_batch=512)
 
-CHARACTER_PROMPT = open("character_prompt.txt", "r", encoding="utf-8").read()
+CHARACTER_PROMPTS = {
+    "assistant": open("assistant.txt", "r", encoding="utf-8").read(),
+    "oldman": open("oldman.txt", "r", encoding="utf-8").read(),
+    "racist": open("racist.txt", "r", encoding="utf-8").read(),
+    "uwu": open("uwu.txt", "r", encoding="utf-8").read(),
+    "sexyman": open("sexyman.txt", "r", encoding="utf-8").read(),
+    "sexywoman": open("sexywoman.txt", "r", encoding="utf-8").read(),
+}
 
 @bot.event
-async def on_message(message):
-    if bot.user in message.mentions and not message.author.bot:
-        async with message.channel.typing():
-            # Récupère les 10 derniers messages (hors bots)
-            messages = [
-                m async for m in message.channel.history(limit=10)
-                if m.content and not m.attachments and not m.embeds
-            ]
+async def on_ready():
+    print(f"Connecté en tant que {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Slash commands synchronisées ({len(synced)})")
+    except Exception as e:
+        print(f"Erreur lors de la synchronisation des slash commands: {e}")
 
-            # Formate l'historique pour le prompt
-            history = ""
-            for m in reversed(messages):
-                history += f"{m.author.name}: {m.content}\n"
-            prompt = (
-                CHARACTER_PROMPT +
-                "Historique de la conversation:\n" +
-                history +
-                f"{message.author.name}: @{bot.user.name} Peux-tu répondre ?\n" +
-                f"{bot.user.name}:"
-            )
+async def personnage_autocomplete(
+    interaction: discord.Interaction,
+    current: str
+) -> List[discord.app_commands.Choice[str]]:
+    return [
+        discord.app_commands.Choice(name=key, value=key)
+        for key in CHARACTER_PROMPTS.keys()
+        if current.lower() in key.lower()
+    ]
 
-            print("Prompt généré pour LLaMA :", prompt)
+@bot.tree.command(name="ask", description="Pose une question à un personnage IA")
+@discord.app_commands.describe(
+    personnage="Choisis le personnage IA",
+    question="Ta question"
+)
+@discord.app_commands.autocomplete(personnage=personnage_autocomplete)
+async def ask(interaction: discord.Interaction, personnage: str, question: str):
+    if personnage not in CHARACTER_PROMPTS:
+        await interaction.response.send_message(
+            f"Personnage inconnu. Choisis parmi : {', '.join(CHARACTER_PROMPTS.keys())}", ephemeral=True
+        )
+        return
 
-            # Génération de la réponse par l'IA
-            response = await asyncio.to_thread(
-                llm,
-                prompt,
-                max_tokens=128,
-                temperature=0.8,
-                top_p=0.95,
-                repeat_penalty=1.1,
-                stop=["\n"]
-            )
-            print("Réponse LLaMA brute :", response)
-            answer = response["choices"][0]["text"].strip()
+    await interaction.response.defer()  # Affiche "en train d'écrire..."
 
-            match = re.search(r'^(.*[.!?])', answer, re.DOTALL)
-            if match:
-                answer = match.group(1).strip()
+    # Récupère les 10 derniers messages du salon
+    messages = [
+        m async for m in interaction.channel.history(limit=10)
+        if m.content and not m.attachments and not m.embeds
+    ]
+    history = ""
+    for m in reversed(messages):
+        history += f"{m.author.name}: {m.content}\n"
 
-            if not answer:
-                answer = "Je suis à court d'idées... réessaye 😅"
+    prompt = (
+        CHARACTER_PROMPTS[personnage]
+        + "\nHistorique de la conversation:\n"
+        + history
+        + f"{interaction.user.name}: {question}\n"
+        + f"{bot.user.name}:"
+    )
 
-            await message.channel.send(answer)
-    await bot.process_commands(message)
+    response = await asyncio.to_thread(
+        llm,
+        prompt,
+        max_tokens=128,
+        temperature=0.8,
+        top_p=0.95,
+        repeat_penalty=1.1,
+        stop=["\n"]
+    )
+    answer = response["choices"][0]["text"].strip()
+    match = re.search(r'^(.*[.!?])', answer, re.DOTALL)
+    if match:
+        answer = match.group(1).strip()
+    if not answer:
+        answer = "Je suis à court d'idées... réessaye 😅"
+
+    await interaction.followup.send(answer)
 
 bot.run(token)
